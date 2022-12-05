@@ -164,95 +164,186 @@ YandexGame.NewLeaderboardScores("TopPlayers", score);
 !["screenshot"](Screenshots/4.webp)
 
 #### Работа 5: «Интеграция системы достижений в проект»
-1) Скачать и импортировать модель персонажа и анимации с mixamo.com.
-2) Добавить на сцену префаб мага и настроить AnimationController.
-3) Добавить на сцену источники света.
-4) Провести сборку приложения.
-
-!["screenshot"](Screenshots/5.webp)
-
-## Задание 2
-### Привести описание того, как происходит сборка проекта проекта под другие платформы. Какие могут быть особенности?
-Ход работы:
-1) Изменить настройки билда для выбранной платформы -> сделать билд.
-2) Устройства ввода могут различаться на разных платформах. Для решения проблемы можно добавить уровень абстракции между кодом для обработки ввода и игровой логикой.
-3) На некоторых платформах существуют специальные устройства ввода (акселерометр, GPS, гироскоп). В приложение можно добавить их поддержку.
-4) На мобильных устройствах существуют ограничения по памяти и производительности. Возможно, нужно будет провести оптимизацию приложения и размера ассетов на диске.
-5) Существуют директивы в коде, которые позволяют исполнять разный код на разных платформах.
+1) Добавить в сохранения id достижений:
 ```cs
-#if UNITY_IOS
-    Debug.Log("iOS");
-#endif
-
-#if UNITY_STANDALONE_OSX
-    Debug.Log("Standalone OSX");
-#endif
-
-#if UNITY_STANDALONE_WIN
-    Debug.Log("Standalone Windows");
-#endif
+public int[] achievementIds = Array.Empty<int>();
 ```
-
-## Задание 3
-### Добавить в меню Option возможность изменения громкости (от 0 до 100%) фоновой музыки в игре
-Ход работы:
-1) Добавить в меню настроек новый UI элемент - слайдер.
-2) Добавить в MusicManager новый скрипт:
+2) Создать класс AchievementManager:
 ```cs
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Unity.VisualScripting;
 using UnityEngine;
-using UnityEngine.UI;
+using YG;
 
-public class VolumeLoader : MonoBehaviour
+public class AchievementManager : MonoBehaviour
 {
-    [SerializeField] private string settingsName;
-    [SerializeField] private Slider menuSlider;
+    [SerializeField] private List<string> achievements;
 
-    private AudioSource audioSource;
+    public static AchievementManager Instance;
+    public List<string> CompletedAchievements { get; private set; } = new();
 
-    public void SaveVolume(float volume)
+    private void OnEnable() => YandexGame.GetDataEvent += SdkDataReceived;
+
+    private void OnDisable() => YandexGame.GetDataEvent -= SdkDataReceived;
+
+    public void CompleteAchievement(int id)
     {
-        audioSource.volume = volume;
-        PlayerPrefs.SetFloat(settingsName, volume);
-        PlayerPrefs.Save();
+        if (!YandexGame.savesData.achievementIds.Contains(id))
+        {
+            YandexGame.savesData.achievementIds = YandexGame.savesData.achievementIds.Append(id).ToArray();
+            YandexGame.SaveProgress();
+        }
     }
 
-    private void Awake()
+    private void SdkDataReceived()
     {
-        audioSource = GetComponent<AudioSource>();
-        if (!PlayerPrefs.HasKey(settingsName))
+        if (!YandexGame.SDKEnabled || !YandexGame.auth)
         {
             return;
         }
 
-        var volume = PlayerPrefs.GetFloat(settingsName);
-        audioSource.volume = volume;
-        if (menuSlider != null)
+        var sortedIds = YandexGame.savesData.achievementIds.Clone() as int[];
+        Array.Sort(sortedIds);
+        CompletedAchievements.AddRange(sortedIds.Select(id => achievements[id]));
+    }
+
+    private void Awake()
+    {
+        if (Instance == null)
         {
-            menuSlider.value = volume;
+            Instance = this;
         }
+    }
+
+    private void Start()
+    {
+        SdkDataReceived();
     }
 }
 ```
-3) On WebGL, Unity stores up to 1MB of PlayerPrefs data using the browser's IndexedDB API.
+3) Добавить в префаб менеджера достижения.
 
+!["screenshot"](Screenshots/6.JPG)
 
+4) Создать класс AchievementMenu, который заполняет текстовое поле достижений:
+```cs
+using System;
+using TMPro;
+using UnityEngine;
+using YG;
 
+public class AchievementsMenu : MonoBehaviour
+{
+    [SerializeField] private TextMeshProUGUI achievementsText;
 
+    private void OnEnable() => YandexGame.GetDataEvent += SdkDataReceived;
 
+    private void OnDisable() => YandexGame.GetDataEvent -= SdkDataReceived;
 
-https://user-images.githubusercontent.com/82456483/198529215-beb437af-fc63-4860-942e-4f5721e59b99.mp4
+    private void SdkDataReceived()
+    {
+        if (!YandexGame.SDKEnabled || !YandexGame.auth)
+        {
+            return;
+        }
 
+        achievementsText.text = string.Empty;
+        foreach (var achievement in AchievementManager.Instance.CompletedAchievements)
+        {
+            achievementsText.text += achievement + '\n';
+        }
+    }
 
+    private void Start()
+    {
+        SdkDataReceived();
+    }
+}
+```
 
+!["screenshot"](Screenshots/5.webp)
 
+## Задание 2
+### Описать не менее трех дополнительных функций Яндекс SDK, которые могут быть интегрированы в игру.
+1) Оценка игры. Вы можете попросить пользователя оценить игру и написать комментарий во всплывающем окне (появится в момент запроса оценки, закрывая фон приложения). Всплывающее окно не будет показано, если пользователь неавторизован или оценивал игру ранее.
+2) Внутриигровые покупки. Вы можете получать доход, предоставив пользователям возможность совершать покупки в игре. Например, дополнительное время на прохождение уровня или аксессуары для игрового персонажа.
+3) Ярлык на рабочий стол. С помощью нативного диалогового окна вы можете предложить пользователю добавить на рабочий стол ярлык — ссылку на игру.
+4) Баннерная реклама. Вы можете получать доход от размещения рекламных блоков в своих играх.
+
+## Задание 3
+### Доработать стилистическое оформление списка лидеров и системы достижений, реализованных в задании 1.
+Ход работы:
+1) Добавить класс ассета-достижения:
+```cs
+using System;
+using UnityEngine;
+
+[CreateAssetMenu(menuName = "Dragon Picker/Achievement")]
+[Serializable]
+public class AchievementSO : ScriptableObject
+{
+    [field: SerializeField] public int Id { get; private set; }
+    [field: SerializeField] public string Title { get; private set; }
+    [field: SerializeField, TextArea] public string Description { get; private set; }
+    [field: SerializeField] public Sprite Image { get; private set; }
+}
+```
+2) Обновить класс AchievementManager на использование ассетов:
+```cs
+[SerializeField] private List<AchievementSO> achievements;
+public List<AchievementSO> CompletedAchievements { get; private set; } = new();
+```
+3) Создать префаб UI элемента достижения:
+
+!["screenshot"](Screenshots/8.JPG)
+
+4) В AchievementMenu добавить код создания UI элемента из ассета:
+```cs
+private void CreateUI()
+{
+    var contentContainer = transform.Find("ScrollView/Viewport/HorizontalLayout");
+    foreach (var achievement in AchievementManager.Instance.CompletedAchievements)
+    {
+        var achievementUI = Instantiate(achievementPrefab, contentContainer);
+        achievementUI.transform.Find("Inner/Image").GetComponent<Image>().sprite = achievement.Image;
+        achievementUI.transform.Find("Inner/Title").GetComponent<TextMeshProUGUI>().text = achievement.Title;
+        achievementUI.transform.Find("Inner/Description").GetComponent<TextMeshProUGUI>().text = achievement.Description;
+    }
+
+    // test achievements
+    for (var i = 0; i < 5; i++)
+    {
+        Instantiate(achievementPrefab, contentContainer);
+    }
+}
+```
+5) Настроить панель с достижениями на использование прокручивания:
+   - добавить в ScrollView компонент "Scroll Rect"
+   - добавить в Viewport компоненты "Mask" и "Image" со спрайтом UIMask 
+   - добавить в VerticalLayout компоненты "Vertical Layout Group" и "Content Size Fitter"
+   - добавить в Scrollbarr компонент "Scrollbar"
+   - настройть работу компонентов между собой
+
+!["screenshot"](Screenshots/9.JPG)
+
+6) Создать несколько достижений и добавить их в AchievementManager.
+
+!["screenshot"](Screenshots/10.JPG)
+
+7) Скопировать ассет "Leaderboard Advanced" из плагина YandexGame, изменить внешний вид и настроить на использование нашего лидерборда "TopPlayers".
+
+!["screenshot"](Screenshots/7.webp)
 
 ## Выводы
 
 Изучены:
-- импортирование моделей и анимаций,
-- создание нескольких сцен и переключение между ними,
-- создание базового меню,
-- добавление звукового сопровождения и настроек громкости.
+- авторизация пользователей используя API,
+- сохранение данных пользователя на облаке,
+- создание системы достижений,
+- более продвинутые функции системы интерфейса uGUI,
+- работа с лидербордами.
 
 ## Powered by
 
